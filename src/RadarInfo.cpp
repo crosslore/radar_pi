@@ -443,7 +443,11 @@ void RadarInfo::ProcessRadarSpoke(SpokeBearing angle, SpokeBearing bearing, uint
     trail_len--;
   }
 
-  bool draw_trails_on_overlay = M_SETTINGS.trails_on_overlay;
+  bool draw_true_trails_on_overlay = M_SETTINGS.true_trails_on_overlay;
+  bool draw_relative_trails_on_overlay = M_SETTINGS.relative_trails_on_overlay;
+  int motion = m_trails_motion.GetValue();
+  bool draw_trails_on_overlay = (draw_true_trails_on_overlay && motion == TARGET_MOTION_TRUE) || 
+    (draw_relative_trails_on_overlay && motion == TARGET_MOTION_RELATIVE);
   if (m_draw_overlay.draw && !draw_trails_on_overlay) {
     m_draw_overlay.draw->ProcessRadarSpoke(M_SETTINGS.overlay_transparency.GetValue(), bearing, data, len);
   }

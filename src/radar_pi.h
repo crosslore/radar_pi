@@ -304,7 +304,8 @@ struct PersistentSettings {
   int guard_zone_render_style;            // 0 = Shading, 1 = Outline, 2 = Shading + Outline
   int guard_zone_timeout;                 // How long before we warn again when bogeys are found
   bool guard_zone_on_overlay;
-  bool trails_on_overlay;
+  bool true_trails_on_overlay;
+  bool relative_trails_on_overlay;
   bool overlay_on_standby;
   int guard_zone_debug_inc;                        // Value to add on every cycle to guard zone bearings, for testing.
   double skew_factor;                              // Set to -1 or other value to correct skewing

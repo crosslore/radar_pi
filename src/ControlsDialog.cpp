@@ -577,7 +577,7 @@ void ControlsDialog::CreateControls() {
   label << _("End bearing") << wxT("\n");
   label << _("Clear cursor") << wxT("\n");
   label << _("Place EBL/VRM") << wxT("\n");
-  label << _("Off/Relative/True trails") << wxT("\n");
+ // label << _("Off/Relative/True trails") << wxT("\n");
   label << _("Clear trails") << wxT("\n");
   label << _("Orientation") << wxT("\n");
   label << _("Overlay transparency") << wxT("\n");

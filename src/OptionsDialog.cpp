@@ -250,11 +250,17 @@ OptionsDialog::OptionsDialog(wxWindow *parent, PersistentSettings &settings, Rad
                                 NULL, this);
   m_GuardZoneOnOverlay->SetValue(m_settings.guard_zone_on_overlay);
 
-  m_TrailsOnOverlay = new wxCheckBox(this, wxID_ANY, _("Show Target trails on overlay"));
-  itemStaticBoxSizerDisplayOptions->Add(m_TrailsOnOverlay, 0, wxALL, border_size);
-  m_TrailsOnOverlay->Connect(wxEVT_COMMAND_CHECKBOX_CLICKED, wxCommandEventHandler(OptionsDialog::OnTrailsOnOverlayClick), NULL,
+  m_TrueTrailsOnOverlay = new wxCheckBox(this, wxID_ANY, _("Show True Target trails on overlay"));
+  itemStaticBoxSizerDisplayOptions->Add(m_TrueTrailsOnOverlay, 0, wxALL, border_size);
+  m_TrueTrailsOnOverlay->Connect(wxEVT_COMMAND_CHECKBOX_CLICKED, wxCommandEventHandler(OptionsDialog::OnTrueTrailsOnOverlayClick), NULL,
                              this);
-  m_TrailsOnOverlay->SetValue(m_settings.trails_on_overlay);
+  m_TrueTrailsOnOverlay->SetValue(m_settings.true_trails_on_overlay);
+
+  m_RelativeTrailsOnOverlay = new wxCheckBox(this, wxID_ANY, _("Show Relative Target trails on overlay"));
+  itemStaticBoxSizerDisplayOptions->Add(m_RelativeTrailsOnOverlay, 0, wxALL, border_size);
+  m_RelativeTrailsOnOverlay->Connect(wxEVT_COMMAND_CHECKBOX_CLICKED, wxCommandEventHandler(OptionsDialog::OnRelativeTrailsOnOverlayClick), NULL,
+    this);
+  m_RelativeTrailsOnOverlay->SetValue(m_settings.relative_trails_on_overlay);
 
   m_OverlayStandby = new wxCheckBox(this, wxID_ANY, _("Show data on overlay when radar is standby"));
   itemStaticBoxSizerDisplayOptions->Add(m_OverlayStandby, 0, wxALL, border_size);
@@ -298,7 +304,8 @@ void OptionsDialog::OnShowExtremeRangeClick(wxCommandEvent &event) {
 
 void OptionsDialog::OnOverlayOnStandbyClick(wxCommandEvent &event) { m_settings.overlay_on_standby = m_OverlayStandby->GetValue(); }
 
-void OptionsDialog::OnTrailsOnOverlayClick(wxCommandEvent &event) { m_settings.trails_on_overlay = m_TrailsOnOverlay->GetValue(); }
+void OptionsDialog::OnTrueTrailsOnOverlayClick(wxCommandEvent &event) { m_settings.true_trails_on_overlay = m_TrueTrailsOnOverlay->GetValue(); }
+void OptionsDialog::OnRelativeTrailsOnOverlayClick(wxCommandEvent &event) { m_settings.relative_trails_on_overlay = m_RelativeTrailsOnOverlay->GetValue(); }
 
 void OptionsDialog::OnTrailStartColourClick(wxCommandEvent &event) {
   m_settings.trail_start_colour = m_TrailStartColour->GetColour();

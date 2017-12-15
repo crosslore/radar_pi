@@ -1308,7 +1308,8 @@ bool radar_pi::LoadConfig(void) {
     m_settings.trail_start_colour = wxColour(s);
     pConf->Read(wxT("TrailColourEnd"), &s, "rgb(63,63,63)");
     m_settings.trail_end_colour = wxColour(s);
-    pConf->Read(wxT("TrailsOnOverlay"), &m_settings.trails_on_overlay, false);
+    pConf->Read(wxT("TrueTrailsOnOverlay"), &m_settings.true_trails_on_overlay, true);
+    pConf->Read(wxT("RelativeTrailsOnOverlay"), &m_settings.relative_trails_on_overlay, false);
     pConf->Read(wxT("Transparency"), &v, DEFAULT_OVERLAY_TRANSPARENCY);
     m_settings.overlay_transparency.Update(v);
 
@@ -1356,7 +1357,8 @@ bool radar_pi::SaveConfig(void) {
     pConf->Write(wxT("ThresholdRed"), m_settings.threshold_red);
     pConf->Write(wxT("TrailColourStart"), m_settings.trail_start_colour.GetAsString());
     pConf->Write(wxT("TrailColourEnd"), m_settings.trail_end_colour.GetAsString());
-    pConf->Write(wxT("TrailsOnOverlay"), m_settings.trails_on_overlay);
+    pConf->Write(wxT("TrueTrailsOnOverlay"), m_settings.true_trails_on_overlay);
+    pConf->Write(wxT("RelativeTrailsOnOverlay"), m_settings.relative_trails_on_overlay);
     pConf->Write(wxT("Transparency"), m_settings.overlay_transparency.GetValue());
     pConf->Write(wxT("VerboseLog"), m_settings.verbose);
     pConf->Write(wxT("AISatARPAoffset"), m_settings.AISatARPAoffset);

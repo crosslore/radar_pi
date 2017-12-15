@@ -52,7 +52,8 @@ class OptionsDialog : public wxDialog {
   void OnOverlayOnStandbyClick(wxCommandEvent& event);
   void OnGuardZoneTimeoutClick(wxCommandEvent& event);
   void OnShowExtremeRangeClick(wxCommandEvent& event);
-  void OnTrailsOnOverlayClick(wxCommandEvent& event);
+  void OnTrueTrailsOnOverlayClick(wxCommandEvent& event);
+  void OnRelativeTrailsOnOverlayClick(wxCommandEvent& event);
   void OnTrailStartColourClick(wxCommandEvent& event);
   void OnTrailEndColourClick(wxCommandEvent& event);
   void OnWeakColourClick(wxCommandEvent& event);
@@ -89,7 +90,8 @@ class OptionsDialog : public wxDialog {
   wxColourPickerCtrl* m_PPIBackgroundColour;
   wxCheckBox* m_ShowExtremeRange;
   wxCheckBox* m_GuardZoneOnOverlay;
-  wxCheckBox* m_TrailsOnOverlay;
+  wxCheckBox* m_TrueTrailsOnOverlay;
+  wxCheckBox* m_RelativeTrailsOnOverlay;
   wxCheckBox* m_OverlayStandby;
   wxCheckBox* m_IgnoreHeading;
   wxCheckBox* m_PassHeading;
