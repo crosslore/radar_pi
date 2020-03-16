@@ -149,6 +149,7 @@ void RadarInfo::Shutdown() {
     }
 #endif
 
+    wxLog::FlushActive();  // Flush any log messages written by the thread
     LOG_INFO(wxT("radar_pi: %s receive thread stopped in %llu ms"), m_name.c_str(), threadEndWait - threadStartWait);
 
     delete m_receive;
@@ -282,26 +283,26 @@ bool RadarInfo::Init() {
 void RadarInfo::ShowControlDialog(bool show, bool reparent) {
   if (show) {
     wxPoint panel_pos = wxDefaultPosition;
-    bool manually_positioned = false;
-
+#ifdef __WXOSX__
     if (m_control_dialog && reparent) {
       panel_pos = m_control_dialog->m_panel_position;
-      manually_positioned = m_control_dialog->m_manually_positioned;
       delete m_control_dialog;
       m_control_dialog = 0;
       LOG_VERBOSE(wxT("radar_pi %s: Reparenting control dialog"), m_name.c_str());
     }
+#endif
     if (!m_control_dialog) {
       m_control_dialog = RadarFactory::MakeControlsDialog(m_radar_type, m_radar);
       m_control_dialog->m_panel_position = panel_pos;
-      m_control_dialog->m_manually_positioned = manually_positioned;
       wxWindow *parent = (wxWindow *)m_radar_panel;
-      if (!m_pi->m_settings.show_radar[m_radar]) {
+#ifdef __WXOSX__
+      if (!m_pi->m_settings.show_radar[m_radar])
+#endif
         parent = m_pi->m_parent_window;
-      }
       LOG_VERBOSE(wxT("radar_pi %s: Creating control dialog"), m_name.c_str());
       m_control_dialog->Create(parent, m_pi, this, wxID_ANY, m_name, m_pi->m_settings.control_pos[m_radar]);
     }
+    m_control_dialog->m_panel_position = panel_pos;
     if (m_control_dialog) m_control_dialog->ShowDialog();
   } else if (m_control_dialog) {
     m_control_dialog->HideDialog();
@@ -309,7 +310,7 @@ void RadarInfo::ShowControlDialog(bool show, bool reparent) {
 }
 
 void RadarInfo::DetectedRadar(NetworkAddress &interfaceAddress, NetworkAddress &radarAddress) {
-  m_pi->SetRadarInterfaceAddress(m_radar, interfaceAddress);
+  m_pi->SetRadarInterfaceAddress(m_radar, interfaceAddress, radarAddress);
   if (!m_control->Init(m_pi, this, interfaceAddress, radarAddress)) {
     wxLogError(wxT("radar_pi %s: Unable to create transmit socket"), m_name.c_str());
   }
@@ -330,38 +331,56 @@ void RadarInfo::SetName(wxString name) {
 
 void RadarInfo::ComputeColourMap() {
   for (int i = 0; i <= UINT8_MAX; i++) {
-    m_colour_map[i] = (i >= m_pi->m_settings.threshold_red) ? BLOB_STRONG
-                                                            : (i >= m_pi->m_settings.threshold_green)
-                                                                  ? BLOB_INTERMEDIATE
-                                                                  : (i >= m_pi->m_settings.threshold_blue) ? BLOB_WEAK : BLOB_NONE;
+    if (i == UINT8_MAX && m_doppler.GetValue() > 0) {
+      m_colour_map[i] = BLOB_DOPPLER_APPROACHING;
+    } else if ((i == UINT8_MAX - 1) && m_doppler.GetValue() == 1) {
+      m_colour_map[i] = BLOB_DOPPLER_RECEDING;
+    } else if (i >= m_pi->m_settings.threshold_red) {
+      m_colour_map[i] = BLOB_STRONG;
+    } else if (i >= m_pi->m_settings.threshold_green) {
+      m_colour_map[i] = BLOB_INTERMEDIATE;
+    } else if (i >= m_pi->m_settings.threshold_blue && i > BLOB_HISTORY_MAX) {
+      m_colour_map[i] = BLOB_WEAK;
+    } else {
+      m_colour_map[i] = BLOB_NONE;  // maybe trail colour, see below
+    }
+
+    LOG_VERBOSE(wxT("radar_pi: %d colour_map[%d] = %d"), m_radar, i, m_colour_map[i]);
   }
 
   for (int i = 0; i < BLOB_COLOURS; i++) {
-    m_colour_map_rgb[i] = wxColour(0, 0, 0);
+    m_colour_map_rgb[i] = PixelColour(0, 0, 0);
   }
-  m_colour_map_rgb[BLOB_STRONG] = m_pi->m_settings.strong_colour;
-  m_colour_map_rgb[BLOB_INTERMEDIATE] = m_pi->m_settings.intermediate_colour;
-  m_colour_map_rgb[BLOB_WEAK] = m_pi->m_settings.weak_colour;
- 
-  if (m_target_trails.GetState() != RCS_OFF) {
-    float r1 = m_pi->m_settings.trail_start_colour.Red();
-    float g1 = m_pi->m_settings.trail_start_colour.Green();
-    float b1 = m_pi->m_settings.trail_start_colour.Blue();
-    float r2 = m_pi->m_settings.trail_end_colour.Red();
-    float g2 = m_pi->m_settings.trail_end_colour.Green();
-    float b2 = m_pi->m_settings.trail_end_colour.Blue();
-    float delta_r = (r2 - r1) / BLOB_HISTORY_COLOURS;
-    float delta_g = (g2 - g1) / BLOB_HISTORY_COLOURS;
-    float delta_b = (b2 - b1) / BLOB_HISTORY_COLOURS;
+  float r1 = M_SETTINGS.trail_start_colour.Red();
+  float g1 = M_SETTINGS.trail_start_colour.Green();
+  float b1 = M_SETTINGS.trail_start_colour.Blue();
+  float r2 = M_SETTINGS.trail_end_colour.Red();
+  float g2 = M_SETTINGS.trail_end_colour.Green();
+  float b2 = M_SETTINGS.trail_end_colour.Blue();
+  float delta_r = (r2 - r1) / BLOB_HISTORY_COLOURS;
+  float delta_g = (g2 - g1) / BLOB_HISTORY_COLOURS;
+  float delta_b = (b2 - b1) / BLOB_HISTORY_COLOURS;
 
-    for (BlobColour history = BLOB_HISTORY_0; history <= BLOB_HISTORY_MAX; history = (BlobColour)(history + 1)) {
+  for (BlobColour history = BLOB_HISTORY_0; history <= BLOB_HISTORY_MAX; history = (BlobColour)(history + 1)) {
+    if (m_target_trails.GetState() != RCS_OFF) {
       m_colour_map[history] = history;
-
-      m_colour_map_rgb[history] = wxColour(r1, g1, b1);
-      r1 += delta_r;
-      g1 += delta_g;
-      b1 += delta_b;
     }
+    m_colour_map_rgb[history] = PixelColour(r1, g1, b1);
+    r1 += delta_r;
+    g1 += delta_g;
+    b1 += delta_b;
+  }
+  // }
+
+  m_colour_map_rgb[BLOB_DOPPLER_APPROACHING] = M_SETTINGS.doppler_approaching_colour;
+  m_colour_map_rgb[BLOB_DOPPLER_RECEDING] = M_SETTINGS.doppler_receding_colour;
+  m_colour_map_rgb[BLOB_STRONG] = M_SETTINGS.strong_colour;
+  m_colour_map_rgb[BLOB_INTERMEDIATE] = M_SETTINGS.intermediate_colour;
+  m_colour_map_rgb[BLOB_WEAK] = M_SETTINGS.weak_colour;
+
+  for (int i = 0; i < BLOB_COLOURS; i++) {
+    LOG_VERBOSE(wxT("radar_pi: %d colour_map_rgb[%d] = %d,%d,%d"), m_radar, i, m_colour_map_rgb[i].Red(),
+                m_colour_map_rgb[i].Green(), m_colour_map_rgb[i].Blue());
   }
 }
 
@@ -419,13 +438,13 @@ void RadarInfo::ProcessRadarSpoke(SpokeBearing angle, SpokeBearing bearing, uint
   //  if (i < 7) data[i] = 200;   // put a dot in the middle for testing
   // }
 
-// following sets an image of 512 circles
+  // following sets an image of 512 circles
   //  for (int i = 0; i < 1020; i += 2) {
   //    data[i] = 0;
   //    data[i + 1] = 200;
-  
+
   // // if (angle > 512 && angle < 530 && i > 512 && i < 530) data[i] = 200;
-  
+
   // }   // set picture to 0 except one dot for testing
 
   // Recompute 'pixels_per_meter' based on the actual spoke length and range in meters.
@@ -457,7 +476,7 @@ void RadarInfo::ProcessRadarSpoke(SpokeBearing angle, SpokeBearing bearing, uint
   // with relative data.
   //
   int stabilized_mode = orientation != ORIENTATION_HEAD_UP;
-  uint8_t weakest_normal_blob = m_pi->m_settings.threshold_blue;
+  uint8_t weakest_normal_blob = m_pi->m_settings.threshold_red;
 
   uint8_t *hist_data = m_history[bearing].line;
   m_history[bearing].time = time_rec;
@@ -582,7 +601,10 @@ void RadarInfo::RequestRadarState(RadarState state) {
         // Refresh radar immediately so that we generate draw mechanisms
         for (int i = 0; i < wxMax(MAX_CHART_CANVAS, GetCanvasCount()); i++) {
           if (m_pi->m_chart_overlay[i] == (int)m_radar) {
-            GetCanvasByIndex(i)->Refresh(false);
+            wxWindow *canvas = GetCanvasByIndex(i);
+            if (canvas) {
+              canvas->Refresh(false);
+            }
           }
         }
       } else if (state == RADAR_STANDBY) {
@@ -706,10 +728,12 @@ bool RadarInfo::SetControlValue(ControlType controlType, RadarControlItem &item,
 
     case CT_ORIENTATION: {
       m_orientation = item;
+      return true;
     }
 
     case CT_CENTER_VIEW: {
       m_view_center = item;
+      return true;
     }
 
     case CT_OVERLAY_CANVAS: {
@@ -720,6 +744,16 @@ bool RadarInfo::SetControlValue(ControlType controlType, RadarControlItem &item,
                  canvas, radar);
 
       m_overlay_canvas[canvas] = radar;
+      return true;
+    }
+
+    case CT_DOPPLER: {
+      m_doppler = item;
+      ComputeColourMap();
+      if (m_control) {
+        return m_control->SetControlValue(controlType, item, button);
+      }
+      break;
     }
 
     // Careful, we're selectively falling through to the next case label
@@ -928,10 +962,6 @@ void RadarInfo::RenderRadarImage1(wxPoint center, double scale, double overlay_r
     arpa_rotate = overlay_rotate - OPENGL_ROTATION;
   }
 
-  if (arpa_on) {
-    m_arpa->RefreshArpaTargets();
-  }
-
   wxLongLong now = wxGetUTCTimeMillis();
   // Render the guard zone
   if (!overlay || (M_SETTINGS.guard_zone_on_overlay && (M_SETTINGS.overlay_on_standby || m_state.GetValue() == RADAR_TRANSMIT))) {
@@ -1014,24 +1044,30 @@ wxString RadarInfo::GetCanvasTextTopLeft() {
 wxString RadarInfo::FormatDistance(double distance) {
   wxString s;
 
-  if (m_pi->m_settings.range_units > 0) {
-    distance *= 1.852;
+  switch (m_pi->m_settings.range_units) { 
+    case 0:     // Mixed
+          if (distance < 0.25 * 1.852) {
+            int meters = distance * 1852.0;
+            s << meters;
+            s << "m";
+          } else {
+            s << wxString::Format(wxT("%.2fNM"), distance);
+          }
+          break;
 
-    if (distance < 1.000) {
-      int meters = distance * 1000.0;
-      s << meters;
-      s << "m";
-    } else {
-      s << wxString::Format(wxT("%.2fkm"), distance);
-    }
-  } else {
-    if (distance < 0.25 * 1.852) {
-      int meters = distance * 1852.0;
-      s << meters;
-      s << "m";
-    } else {
-      s << wxString::Format(wxT("%.2fnm"), distance);
-    }
+    case 1:   // km
+          distance *= 1.852;
+          if (distance < 1.000) {
+            int meters = distance * 1000.0;
+            s << meters;
+            s << "m";
+          } else {
+            s << wxString::Format(wxT("%.2fkm"), distance);
+          }
+          break;
+
+    default:  // nm  
+          s << wxString::Format(wxT("%.2fNM"), distance);
   }
 
   return s;
@@ -1216,7 +1252,7 @@ wxString RadarInfo::GetDisplayRangeStr(int meters, bool unit) {
         break;
       case NM(3 / 8):
       case NM(3 / 8) + 1:
-        s = wxT("3/4");
+        s = wxT("3/8");
         break;
       case NM(1 / 16):
       case NM(1 / 16) + 1:

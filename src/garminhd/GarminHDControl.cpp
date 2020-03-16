@@ -65,9 +65,7 @@ typedef struct {
 #pragma pack(pop)
 
 GarminHDControl::GarminHDControl(NetworkAddress sendAddress) {
-  m_addr.sin_family = AF_INET;
-  m_addr.sin_addr = sendAddress.addr;  // Overwritten by actual radar addr
-  m_addr.sin_port = sendAddress.port;
+  m_addr = sendAddress.GetSockAddrIn();  // Overwritten by actual radar addr
 
   m_radar_socket = INVALID_SOCKET;
   m_name = wxT("Navico radar");
@@ -105,14 +103,7 @@ bool GarminHDControl::Init(radar_pi *pi, RadarInfo *ri, NetworkAddress &ifadr, N
   }
 
   if (!r) {
-    struct sockaddr_in s;
-
-    s.sin_addr = ifadr.addr;
-    s.sin_port = ifadr.port;
-    s.sin_family = AF_INET;
-#ifdef __WX_MAC__
-    s.sin_len = sizeof(sockaddr_in);
-#endif
+    struct sockaddr_in s = ifadr.GetSockAddrIn();
 
     r = ::bind(m_radar_socket, (struct sockaddr *)&s, sizeof(s));
   }
@@ -188,8 +179,8 @@ bool GarminHDControl::SetRange(int meters) {
 
     packet.packet_type = 0x2b3;
     packet.len1 = sizeof(packet.parm1);
-    packet.parm1 = meters;
-    LOG_VERBOSE(wxT("radar_pi: %s transmit: range %d meters"), m_name.c_str(), meters);
+    packet.parm1 = meters-1;
+    LOG_VERBOSE(wxT("radar_pi: %s transmit: range %d meters"), m_name.c_str(), meters-1);
     return TransmitCmd(&packet, sizeof(packet));
   }
   return false;
@@ -237,6 +228,7 @@ bool GarminHDControl::SetControlValue(ControlType controlType, RadarControlItem 
     case CT_LOCAL_INTERFERENCE_REJECTION:
     case CT_NOISE_REJECTION:
     case CT_TARGET_SEPARATION:
+    case CT_DOPPLER:
     case CT_ANTENNA_HEIGHT:
     case CT_NO_TRANSMIT_END:
     case CT_NO_TRANSMIT_START:

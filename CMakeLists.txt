@@ -15,11 +15,11 @@ SET(PACKAGE_NAME radar_pi)
 SET(VERBOSE_NAME Radar)
 SET(TITLE_NAME Radar)
 SET(CPACK_PACKAGE_CONTACT "kees@verruijt.net")
-SET(VERSION_MAJOR "4")
 #SET(CMAKE_BUILD_TYPE Debug)
-SET(VERSION_MINOR "911")
-SET(VERSION_PATCH "0")
-SET(VERSION_DATE "2019-02-10")
+SET(VERSION_MAJOR "5")
+SET(VERSION_MINOR "0")
+SET(VERSION_PATCH "4")
+SET(VERSION_DATE "2019-02-17")
 SET(OCPN_MIN_VERSION "ov50")
 
 INCLUDE("cmake/PluginConfigure.cmake")
@@ -75,6 +75,9 @@ SET(SRC_NAVICO
             src/navico/NavicoControlSet.h
             src/navico/NavicoControlsDialog.cpp
             src/navico/NavicoControlsDialog.h
+            src/navico/NavicoLocate.cpp
+            src/navico/NavicoLocate.h
+            src/navico/NavicoRadarInfo.h
 )
 
 SET(SRC_RADAR

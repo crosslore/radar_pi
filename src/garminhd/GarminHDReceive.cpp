@@ -68,7 +68,7 @@ struct radar_line {
   uint8_t timed_transmit[4];
   uint8_t dome_speed;
   uint8_t fill_4[7];
-  uint8_t line_data[GARMIN_HD_MAX_SPOKE_LEN];
+  uint8_t line_data[GARMIN_HD_MAX_SPOKE_LEN * 2];
 };
 
 #pragma pack(pop)
@@ -88,45 +88,14 @@ void GarminHDReceive::ProcessFrame(radar_line *packet) {
   int i;
   uint8_t *p, *s;
 
-  if (packet->scan_length * 8 > GARMIN_HD_MAX_SPOKE_LEN) {
+  if (packet->scan_length * 2 > GARMIN_HD_MAX_SPOKE_LEN) {
     LOG_INFO(wxT("radar_pi: %s truncating data, %d longer than expected max length %d"), packet->scan_length * 8,
              GARMIN_HD_MAX_SPOKE_LEN);
-    packet->scan_length = GARMIN_HD_MAX_SPOKE_LEN / 8;
-  }
-  for (p = line, s = packet->line_data, i = 0; i < packet->scan_length; i++, s++) {
-    *p++ = (*s & 0x01) > 0 ? 255 : 0;
-    *p++ = (*s & 0x02) > 0 ? 255 : 0;
-    *p++ = (*s & 0x04) > 0 ? 255 : 0;
-    *p++ = (*s & 0x08) > 0 ? 255 : 0;
-    *p++ = (*s & 0x10) > 0 ? 255 : 0;
-    *p++ = (*s & 0x20) > 0 ? 255 : 0;
-    *p++ = (*s & 0x40) > 0 ? 255 : 0;
-    *p++ = (*s & 0x80) > 0 ? 255 : 0;
+    packet->scan_length = GARMIN_HD_MAX_SPOKE_LEN / 2;
   }
 
-  m_ri->m_state.Update(RADAR_TRANSMIT);
-  m_ri->m_range.Update(packet->range_meters);
-  m_ri->m_gain.Update(packet->gain_level[0], packet->gain_level[1] ? RCS_AUTO_1 : RCS_MANUAL);
-  m_ri->m_rain.Update(packet->sea_clutter[0], packet->sea_clutter[1] ? RCS_AUTO_1 : RCS_MANUAL);
-  m_ri->m_rain.Update(packet->rain_clutter[0]);
-  m_ri->m_bearing_alignment.Update(packet->dome_offset);
-  m_ri->m_ftc.Update(packet->FTC_mode);
-  m_ri->m_interference_rejection.Update(packet->crosstalk_onoff);
-  m_ri->m_scan_speed.Update(packet->dome_speed);
-
-  wxCriticalSectionLocker lock(m_ri->m_exclusive);
-
-  m_ri->m_radar_timeout = now + WATCHDOG_TIMEOUT;
-  m_ri->m_data_timeout = now + DATA_TIMEOUT;
-
-  if (m_first_receive) {
-    m_first_receive = false;
-    wxLongLong startup_elapsed = wxGetUTCTimeMillis() - m_pi->GetBootMillis();
-    LOG_INFO(wxT("radar_pi: %s first radar spoke received after %llu ms\n"), m_ri->m_name.c_str(), startup_elapsed);
-  }
-
-  int angle_raw = packet->angle;
-  int spoke = angle_raw;  // Garmin does not have radar heading, so there is no difference between spoke and angle
+  int angle_raw = packet->angle * 2;
+  int spoke = angle_raw;
   m_ri->m_statistics.spokes++;
   if (m_next_spoke >= 0 && spoke != m_next_spoke) {
     if (spoke > m_next_spoke) {
@@ -136,18 +105,79 @@ void GarminHDReceive::ProcessFrame(radar_line *packet) {
     }
   }
 
-  m_next_spoke = (spoke + 1) % GARMIN_HD_SPOKES;
+  m_ri->m_state.Update(RADAR_TRANSMIT);
+  m_ri->m_range.Update(packet->range_meters+1);
+  m_ri->m_gain.Update(packet->gain_level[0], packet->gain_level[1] ? RCS_AUTO_1 : RCS_MANUAL);
+  m_ri->m_rain.Update(packet->sea_clutter[0], packet->sea_clutter[1] ? RCS_AUTO_1 : RCS_MANUAL);
+  m_ri->m_rain.Update(packet->rain_clutter[0]);
+  m_ri->m_bearing_alignment.Update(packet->dome_offset);
+  m_ri->m_ftc.Update(packet->FTC_mode);
+  m_ri->m_interference_rejection.Update(packet->crosstalk_onoff);
+  m_ri->m_scan_speed.Update(packet->dome_speed);
 
-  short int heading_raw = 0;
-  int bearing_raw;
+  m_ri->m_radar_timeout = now + WATCHDOG_TIMEOUT;
+  m_ri->m_data_timeout = now + DATA_TIMEOUT;
 
-  heading_raw = SCALE_DEGREES_TO_RAW(m_pi->GetHeadingTrue());  // include variation
-  bearing_raw = angle_raw + heading_raw;
+  if (m_first_receive) {
+    m_first_receive = false;
+    wxLongLong startup_elapsed = wxGetUTCTimeMillis() - m_pi->GetBootMillis();
+    LOG_INFO(wxT("radar_pi: %s first radar spoke received after %llu ms\n"), m_ri->m_name.c_str(), startup_elapsed);
+  }
+  wxCriticalSectionLocker lock(m_ri->m_exclusive);
 
-  SpokeBearing a = MOD_SPOKES(angle_raw);
-  SpokeBearing b = MOD_SPOKES(bearing_raw);
+  for (int j = 0; j < 4; j++) {
+    s = &packet->line_data[packet->scan_length / 4 * j];
+    for (p = line, i = 0; i < packet->scan_length / 4; i++, s++) {
+      *p++ = (*s & 0x01) > 0 ? 255 : 0;
+      *p++ = (*s & 0x02) > 0 ? 255 : 0;
+      *p++ = (*s & 0x04) > 0 ? 255 : 0;
+      *p++ = (*s & 0x08) > 0 ? 255 : 0;
+      *p++ = (*s & 0x10) > 0 ? 255 : 0;
+      *p++ = (*s & 0x20) > 0 ? 255 : 0;
+      *p++ = (*s & 0x40) > 0 ? 255 : 0;
+      *p++ = (*s & 0x80) > 0 ? 255 : 0;
+    }
 
-  m_ri->ProcessRadarSpoke(a, b, line, p - line, packet->display_meters, time_rec);
+    m_next_spoke = (spoke + 1) % GARMIN_HD_SPOKES;
+
+    short int heading_raw = 0;
+    int bearing_raw;
+
+    heading_raw = SCALE_DEGREES_TO_RAW(m_pi->GetHeadingTrue());  // include variation
+    bearing_raw = angle_raw + heading_raw;
+
+    SpokeBearing a = MOD_SPOKES(angle_raw);
+    SpokeBearing b = MOD_SPOKES(bearing_raw);
+
+    m_ri->ProcessRadarSpoke(a, b, line, p - line, packet->display_meters, time_rec);
+
+    angle_raw++;
+    spoke++;
+  }
+}
+
+// Check that this interface is valid for
+// Garmin HD radar, e.g. is on the same network.
+// We know that the radar is on 172.16.2.0 and that
+// the netmask is 12 bits, eg 255.240.0.0.
+
+bool GarminHDReceive::IsValidGarminAddress(struct ifaddrs * nif) {
+  if (VALID_IPV4_ADDRESS(nif)) {
+
+    uint32_t addr = ntohl(((struct sockaddr_in *) nif->ifa_addr)->sin_addr.s_addr);
+    uint32_t mask = ntohl(((struct sockaddr_in *) nif->ifa_netmask)->sin_addr.s_addr);
+    static uint32_t radar = IPV4_ADDR(172, 16, 2, 0);
+    static uint32_t radarmask = IPV4_ADDR(172, 16, 0, 0);
+
+    if ((addr & mask) == radarmask
+        && (radar & mask) == radarmask)
+    {
+      LOG_RECEIVE(wxT("radar_pi: %s found garmin addr=%X mask=%X req=%X"), m_ri->m_name.c_str(), addr, mask, radarmask);
+      return true;
+    }
+    LOG_RECEIVE(wxT("radar_pi: %s not garmin addr=%X mask=%X req=%X"), m_ri->m_name.c_str(), addr, mask, radarmask);
+  }
+  return false;
 }
 
 SOCKET GarminHDReceive::PickNextEthernetCard() {
@@ -159,8 +189,8 @@ SOCKET GarminHDReceive::PickNextEthernetCard() {
   if (m_interface) {
     m_interface = m_interface->ifa_next;
   }
-  // Loop until card with a valid IPv4 address
-  while (m_interface && !VALID_IPV4_ADDRESS(m_interface)) {
+  // Loop until card with a valid Garmin address
+  while (m_interface && !IsValidGarminAddress(m_interface)) {
     m_interface = m_interface->ifa_next;
   }
   if (!m_interface) {
@@ -171,17 +201,26 @@ SOCKET GarminHDReceive::PickNextEthernetCard() {
     if (!getifaddrs(&m_interface_array)) {
       m_interface = m_interface_array;
     }
-    // Loop until card with a valid IPv4 address
-    while (m_interface && !VALID_IPV4_ADDRESS(m_interface)) {
+    // Loop until card with a valid Garmin address
+    while (m_interface && !IsValidGarminAddress(m_interface)) {
       m_interface = m_interface->ifa_next;
     }
   }
-  if (m_interface && VALID_IPV4_ADDRESS(m_interface)) {
+  if (m_interface) {
     m_interface_addr.addr = ((struct sockaddr_in *)m_interface->ifa_addr)->sin_addr;
     m_interface_addr.port = 0;
-  }
 
-  socket = GetNewReportSocket();
+    socket = GetNewReportSocket();
+  }
+  else {
+    wxString s;
+    s << _("No interface found") << wxT("\n");
+    s <<_("Interface must match") << wxT(" 172.16/12");
+    SetInfoStatus(s);
+
+    socket = GetNewReportSocket();
+
+  }
 
   return socket;
 }
@@ -197,8 +236,8 @@ SOCKET GarminHDReceive::GetNewReportSocket() {
   error = wxT("");
   socket = startUDPMulticastReceiveSocket(m_interface_addr, m_report_addr, error);
   if (socket != INVALID_SOCKET) {
-    wxString addr = FormatNetworkAddress(m_interface_addr);
-    wxString rep_addr = FormatNetworkAddressPort(m_report_addr);
+    wxString addr = m_interface_addr.FormatNetworkAddress();
+    wxString rep_addr = m_report_addr.FormatNetworkAddressPort();
 
     LOG_RECEIVE(wxT("radar_pi: %s scanning interface %s for data from %s"), m_ri->m_name.c_str(), addr.c_str(), rep_addr.c_str());
 
@@ -295,7 +334,7 @@ void *GarminHDReceive::Entry(void) {
 
               radarFoundAddr = rx_addr.ipv4;
               radar_addr = &radarFoundAddr;
-              m_addr = FormatNetworkAddress(radar_address);
+              m_addr = radar_address.FormatNetworkAddress();
 
               if (m_ri->m_state.GetValue() == RADAR_OFF) {
                 LOG_INFO(wxT("radar_pi: %s detected at %s"), m_ri->m_name.c_str(), m_addr.c_str());
@@ -463,7 +502,7 @@ bool GarminHDReceive::ProcessReport(const uint8_t *report, size_t len) {
 
   m_ri->resetTimeout(now);
 
-  if (len >= sizeof(rad_response_pkt)) {  //  sizeof(rad_response_pkt)) {
+  if (len >= 12 /*sizeof(rad_response_pkt)*/) {  //  sizeof(rad_response_pkt)) {
     rad_response_pkt *packet = (rad_response_pkt *)report;
     uint16_t packet_type = packet->packet_type;
 
@@ -487,8 +526,8 @@ bool GarminHDReceive::ProcessReport(const uint8_t *report, size_t len) {
       }
 
       case 0x2a7: {
-        LOG_VERBOSE(wxT("0x02a7: range %d"), packet->range_meters);  // Range in meters
-        m_ri->m_range.Update(packet->range_meters);
+        LOG_VERBOSE(wxT("0x02a7: range %d"), packet->range_meters+1);  // Range in meters
+        m_ri->m_range.Update(packet->range_meters+1);
 
         LOG_VERBOSE(wxT("0x02a7: gain %d"), packet->gain_level);  // Gain
         m_gain = packet->gain_level;

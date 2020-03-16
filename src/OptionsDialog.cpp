@@ -36,7 +36,8 @@
 PLUGIN_BEGIN_NAMESPACE
 
 OptionsDialog::OptionsDialog(wxWindow *parent, PersistentSettings &settings, RadarType radar_type)
-    : wxDialog(parent, wxID_ANY, _("Radar Display Preferences"), wxDefaultPosition, wxDefaultSize, wxDEFAULT_DIALOG_STYLE) {
+    : wxDialog(parent, wxID_ANY, _("Radar Display Preferences") + wxT(" ") + wxT(PLUGIN_VERSION), wxDefaultPosition, wxDefaultSize,
+               wxDEFAULT_DIALOG_STYLE) {
   wxString m_temp;
 
   m_parent = parent;
@@ -50,8 +51,8 @@ OptionsDialog::OptionsDialog(wxWindow *parent, PersistentSettings &settings, Rad
   wxBoxSizer *topSizer = new wxBoxSizer(wxVERTICAL);
   SetSizer(topSizer);
 
-  wxFlexGridSizer *DisplayOptionsBox = new wxFlexGridSizer(4, 2, 5);
-  topSizer->Add(DisplayOptionsBox, 0, wxALIGN_CENTER_HORIZONTAL | wxALL | wxEXPAND, 2);
+  wxFlexGridSizer *DisplayOptionsBox = new wxFlexGridSizer(4);
+  topSizer->Add(DisplayOptionsBox, 0, wxALL | wxEXPAND, 2);
 
   //  Range Units options
 
@@ -87,18 +88,18 @@ OptionsDialog::OptionsDialog(wxWindow *parent, PersistentSettings &settings, Rad
 
   wxButton *select_sound = new wxButton(this, wxID_ANY, _("Select Alert Sound"), wxDefaultPosition, small_button_size, 0);
   select_sound->Connect(wxEVT_COMMAND_BUTTON_CLICKED, wxCommandEventHandler(OptionsDialog::OnSelectSoundClick), NULL, this);
-  guardZoneSizer->Add(select_sound, 0, wxALIGN_CENTER_HORIZONTAL | wxALL, border_size);
+  guardZoneSizer->Add(select_sound, 0, wxALL, border_size);
 
   wxButton *test_sound = new wxButton(this, wxID_ANY, _("Test Alert Sound"), wxDefaultPosition, small_button_size, 0);
   test_sound->Connect(wxEVT_COMMAND_BUTTON_CLICKED, wxCommandEventHandler(OptionsDialog::OnTestSoundClick), NULL, this);
-  guardZoneSizer->Add(test_sound, 0, wxALIGN_CENTER_HORIZONTAL | wxALL, border_size);
+  guardZoneSizer->Add(test_sound, 0, wxALL, border_size);
 
   wxStaticText *guardZoneTimeout =
       new wxStaticText(this, wxID_ANY, _("Repeat alarm after (sec)"), wxDefaultPosition, wxDefaultSize, 0);
-  guardZoneSizer->Add(guardZoneTimeout, 0, wxALIGN_CENTER_HORIZONTAL | wxALL, border_size);
+  guardZoneSizer->Add(guardZoneTimeout, 0, wxALL, border_size);
 
   m_GuardZoneTimeout = new wxTextCtrl(this, wxID_ANY);
-  guardZoneSizer->Add(m_GuardZoneTimeout, 1, wxALIGN_CENTER_HORIZONTAL | wxALL, border_size);
+  guardZoneSizer->Add(m_GuardZoneTimeout, 1, wxALL, border_size);
   m_GuardZoneTimeout->Connect(wxEVT_COMMAND_TEXT_UPDATED, wxCommandEventHandler(OptionsDialog::OnGuardZoneTimeoutClick), NULL,
                               this);
   m_GuardZoneTimeout->SetValue(wxString::Format(wxT("%d"), m_settings.guard_zone_timeout));
@@ -112,7 +113,7 @@ OptionsDialog::OptionsDialog(wxWindow *parent, PersistentSettings &settings, Rad
   RadarDraw::GetDrawingMethods(DrawingMethods);
   m_DrawingMethod = new wxComboBox(this, wxID_ANY, DrawingMethods[m_settings.drawing_method], wxDefaultPosition, wxDefaultSize,
                                    DrawingMethods, wxALIGN_CENTRE | wxST_NO_AUTORESIZE, wxDefaultValidator, _("Drawing Method"));
-  drawingMethodSizer->Add(m_DrawingMethod, 0, wxALIGN_CENTER_VERTICAL | wxALL, border_size);
+  drawingMethodSizer->Add(m_DrawingMethod, 0, wxALIGN_CENTER | wxALL, border_size);
   m_DrawingMethod->Connect(wxEVT_COMMAND_COMBOBOX_SELECTED, wxCommandEventHandler(OptionsDialog::OnDrawingMethodClick), NULL, this);
 
   // Menu options
@@ -124,7 +125,7 @@ OptionsDialog::OptionsDialog(wxWindow *parent, PersistentSettings &settings, Rad
   m_MenuAutoHide = new wxComboBox(this, wxID_ANY, MenuAutoHideStrings[m_settings.menu_auto_hide], wxDefaultPosition, wxDefaultSize,
                                   ARRAY_SIZE(MenuAutoHideStrings), MenuAutoHideStrings, wxALIGN_CENTRE | wxST_NO_AUTORESIZE,
                                   wxDefaultValidator, _("Auto hide after"));
-  menuOptionsSizer->Add(m_MenuAutoHide, 0, wxALIGN_CENTER_VERTICAL | wxALL, border_size);
+  menuOptionsSizer->Add(m_MenuAutoHide, 0, wxALIGN_CENTER | wxALL, border_size);
   m_MenuAutoHide->Connect(wxEVT_COMMAND_COMBOBOX_SELECTED, wxCommandEventHandler(OptionsDialog::OnMenuAutoHideClick), NULL, this);
 
   // Target trails colours
@@ -144,6 +145,22 @@ OptionsDialog::OptionsDialog(wxWindow *parent, PersistentSettings &settings, Rad
   m_TrailEndColour = new wxColourPickerCtrl(this, wxID_ANY, m_settings.trail_end_colour, wxDefaultPosition, wxSize(150, 30));
   m_TrailEndColour->Connect(wxEVT_COLOURPICKER_CHANGED, wxCommandEventHandler(OptionsDialog::OnTrailEndColourClick), NULL, this);
   trailSizer->Add(m_TrailEndColour);
+
+  wxStaticText *dopplerApproachingText = new wxStaticText(this, wxID_ANY, _("Doppler Approaching color"));
+  trailSizer->Add(dopplerApproachingText, 0, wxALL, border_size);
+  m_DopplerApproachingColour =
+      new wxColourPickerCtrl(this, wxID_ANY, m_settings.doppler_approaching_colour, wxDefaultPosition, wxSize(150, 30));
+  m_DopplerApproachingColour->Connect(wxEVT_COLOURPICKER_CHANGED,
+                                      wxCommandEventHandler(OptionsDialog::OnDopplerApproachingColourClick), NULL, this);
+  trailSizer->Add(m_DopplerApproachingColour);
+
+  wxStaticText *dopplerRecedingText = new wxStaticText(this, wxID_ANY, _("Doppler Receding color"));
+  trailSizer->Add(dopplerRecedingText, 0, wxALL, border_size);
+  m_DopplerRecedingColour =
+      new wxColourPickerCtrl(this, wxID_ANY, m_settings.doppler_receding_colour, wxDefaultPosition, wxSize(150, 30));
+  m_DopplerRecedingColour->Connect(wxEVT_COLOURPICKER_CHANGED, wxCommandEventHandler(OptionsDialog::OnDopplerRecedingColourClick),
+                                   NULL, this);
+  trailSizer->Add(m_DopplerRecedingColour);
 
   // Target colours
 
@@ -206,7 +223,7 @@ OptionsDialog::OptionsDialog(wxWindow *parent, PersistentSettings &settings, Rad
   //  Options
 
   wxFlexGridSizer *OptionsGrid = new wxFlexGridSizer(3, 1, 5);
-  topSizer->Add(OptionsGrid, 0, wxALIGN_CENTER_HORIZONTAL | wxALL | wxEXPAND, 2);
+  topSizer->Add(OptionsGrid, 0, wxALL | wxEXPAND, 2);
 
   wxStaticBox *itemStaticBoxOptions = new wxStaticBox(this, wxID_ANY, _("Options"));
   wxStaticBoxSizer *itemStaticBoxSizerOptions = new wxStaticBoxSizer(itemStaticBoxOptions, wxVERTICAL);
@@ -273,7 +290,7 @@ OptionsDialog::OptionsDialog(wxWindow *parent, PersistentSettings &settings, Rad
 
   wxButton *resetButton = new wxButton(this, wxID_ANY, _("Select radar types"), wxDefaultPosition, small_button_size, 0);
   resetButton->Connect(wxEVT_COMMAND_BUTTON_CLICKED, wxCommandEventHandler(OptionsDialog::OnResetButtonClick), NULL, this);
-  itemStaticBoxSizerReset->Add(resetButton, 0, wxALIGN_CENTER_HORIZONTAL | wxALL, border_size);
+  itemStaticBoxSizerReset->Add(resetButton, 0, wxALL, border_size);
 
   // Accept/Reject button
   wxStdDialogButtonSizer *DialogButtonSizer = wxDialog::CreateStdDialogButtonSizer(wxOK | wxCANCEL);
@@ -322,6 +339,14 @@ void OptionsDialog::OnPPIBackgroundColourClick(wxCommandEvent &event) {
 
 void OptionsDialog::OnIntermediateColourClick(wxCommandEvent &event) {
   m_settings.intermediate_colour = m_IntermediateColour->GetColour();
+}
+
+void OptionsDialog::OnDopplerApproachingColourClick(wxCommandEvent &event) {
+  m_settings.doppler_approaching_colour = m_DopplerApproachingColour->GetColour();
+}
+
+void OptionsDialog::OnDopplerRecedingColourClick(wxCommandEvent &event) {
+  m_settings.doppler_receding_colour = m_DopplerRecedingColour->GetColour();
 }
 
 void OptionsDialog::OnStrongColourClick(wxCommandEvent &event) { m_settings.strong_colour = m_StrongColour->GetColour(); }

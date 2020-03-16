@@ -70,6 +70,8 @@ enum {  // process ID's
   ID_TRANSMIT_STANDBY,
 
   ID_SHOW_RADAR_PPI,
+  ID_DOCK_RADAR_PPI,
+
   ID_RADAR_OVERLAY0,
   ID_ADJUST = ID_RADAR_OVERLAY0 + MAX_CHART_CANVAS,
   ID_ADVANCED,
@@ -132,7 +134,6 @@ class ControlsDialog : public wxDialog {
     m_from_control = 0;
 
     m_panel_position = wxDefaultPosition;
-    m_manually_positioned = false;
 
     m_pi = 0;
     m_ri = 0;
@@ -211,6 +212,7 @@ class ControlsDialog : public wxDialog {
     m_ftc_button = 0;
     m_adjust_button = 0;
     m_cursor_menu = 0;
+    m_doppler_button = 0;
 
     for (size_t i = 0; i < ARRAY_SIZE(m_ctrl); i++) {
       m_ctrl[i].type = CT_NONE;
@@ -246,7 +248,6 @@ class ControlsDialog : public wxDialog {
   wxBoxSizer *m_top_sizer;
   wxBoxSizer *m_control_sizer;
   wxPoint m_panel_position;
-  bool m_manually_positioned;
   ControlInfo m_ctrl[CT_MAX];
 
  protected:
@@ -346,6 +347,7 @@ class ControlsDialog : public wxDialog {
 
   // View controls
   RadarControlButton *m_targets_on_ppi_button;
+  RadarControlButton *m_doppler_button;
   RadarControlButton *m_target_trails_button;
   RadarControlButton *m_trails_motion_button;
   wxButton *m_clear_trails_button;
@@ -380,6 +382,7 @@ class ControlsDialog : public wxDialog {
 
   // Window controls
   RadarButton *m_show_ppi_button;
+  RadarButton *m_dock_ppi_button;
   RadarControlButton *m_overlay_button[MAX_CHART_CANVAS];
   RadarControlButton *m_transparency_button;
 
@@ -403,6 +406,8 @@ class ControlsDialog : public wxDialog {
   void SetMenuAutoHideTimeout();
   void SwitchTo(wxBoxSizer *to, const wxChar *name);
   bool UpdateSizersButtonsShown();
+
+ public:
   void Resize(bool force);
   void CreateControls();
   void DisableRadarControls();
@@ -437,6 +442,7 @@ class ControlsDialog : public wxDialog {
 
   void OnPowerButtonClick(wxCommandEvent &event);
   void OnRadarShowPPIButtonClick(wxCommandEvent &event);
+  void OnRadarDockPPIButtonClick(wxCommandEvent &event);
   void OnRadarOverlayButtonClick(wxCommandEvent &event);
   void OnMessageButtonClick(wxCommandEvent &event);
 

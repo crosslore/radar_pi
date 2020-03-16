@@ -76,6 +76,7 @@ EVT_BUTTON(ID_PREFERENCES, ControlsDialog::OnPreferencesButtonClick)
 
 EVT_BUTTON(ID_POWER, ControlsDialog::OnPowerButtonClick)
 EVT_BUTTON(ID_SHOW_RADAR_PPI, ControlsDialog::OnRadarShowPPIButtonClick)
+EVT_BUTTON(ID_DOCK_RADAR_PPI, ControlsDialog::OnRadarDockPPIButtonClick)
 EVT_BUTTON(ID_GAIN, ControlsDialog::OnRadarGainButtonClick)
 
 EVT_BUTTON(ID_TARGETS_ON_PPI, ControlsDialog::OnTargetsOnPPIButtonClick)
@@ -305,9 +306,11 @@ bool RadarRangeControlButton::ToggleState() {
 
 ControlsDialog::~ControlsDialog() {
   wxPoint pos = GetPosition();
-
-  LOG_DIALOG(wxT("%s saved position %d,%d"), m_log_name.c_str(), pos.x, pos.y);
-  m_pi->m_settings.control_pos[m_ri->m_radar] = pos;
+  // When radar panel is hidden GetPosition() sometimes may return very large numbers
+  if (pos.x < 5000 && pos.y < 5000 && pos.x > -500 && pos.y > -500) {
+    m_pi->m_settings.control_pos[m_ri->m_radar] = pos;
+    LOG_DIALOG(wxT("%s saved position %d,%d"), m_log_name.c_str(), pos.x, pos.y);
+  }
 }
 
 bool ControlsDialog::Create(wxWindow* parent, radar_pi* ppi, RadarInfo* ri, wxWindowID id, const wxString& caption,
@@ -953,6 +956,10 @@ void ControlsDialog::CreateControls() {
   m_show_ppi_button = new RadarButton(this, ID_SHOW_RADAR_PPI, g_buttonSize, _T(""));
   m_window_sizer->Add(m_show_ppi_button, 0, wxALL, BORDER);
 
+  // The DOCK PPI button
+  m_dock_ppi_button = new RadarButton(this, ID_DOCK_RADAR_PPI, g_buttonSize, _T(""));
+  m_window_sizer->Add(m_dock_ppi_button, 0, wxALL, BORDER);
+
   // The RADAR ONLY / OVERLAY canvas 0..n buttons
   for (int i = 0; i < MAX_CHART_CANVAS; i++) {
     wxString name;
@@ -989,6 +996,12 @@ void ControlsDialog::CreateControls() {
   m_targets_on_ppi_button =
       new RadarControlButton(this, ID_TARGETS_ON_PPI, _("AIS/ARPA on PPI"), m_ctrl[CT_TARGET_ON_PPI], &m_ri->m_target_on_ppi);
   m_view_sizer->Add(m_targets_on_ppi_button, 0, wxALL, BORDER);
+
+  // The DOPPLER button
+  if (m_ctrl[CT_DOPPLER].type) {
+    m_doppler_button = new RadarControlButton(this, ID_CONTROL_BUTTON, _("Doppler"), m_ctrl[CT_DOPPLER], &m_ri->m_doppler);
+    m_view_sizer->Add(m_doppler_button, 0, wxALL, BORDER);
+  }
 
   // The TARGET_TRAIL button
   if (m_ctrl[CT_TARGET_TRAILS].type) {
@@ -1338,42 +1351,62 @@ void ControlsDialog::OnRadarControlButtonClick(wxCommandEvent& event) {
   }
 }
 
+void ControlsDialog::OnRadarDockPPIButtonClick(wxCommandEvent& event) {
+  m_pi->m_settings.dock_radar[m_ri->m_radar] = !m_pi->m_settings.dock_radar[m_ri->m_radar];
+
+  wxAuiPaneInfo& pane = m_ri->m_radar_panel->m_aui_mgr->GetPane(m_ri->m_radar_panel);
+  if (m_pi->m_settings.dock_radar[m_ri->m_radar]) {  // dock PPI
+    pane.dock_layer = 1;
+    pane.Dockable(true).CaptionVisible().Right().Dock();
+    m_ri->m_radar_panel->m_aui_mgr->Update();
+    // and restore dock size if available
+    if (m_pi->m_settings.dock_size > 0) {
+      m_ri->m_radar_panel->m_dock =
+          wxString::Format(wxT("|dock_size(%d,%d,%d)="), pane.dock_direction, pane.dock_layer, pane.dock_row);
+      wxString perspective = m_ri->m_radar_panel->m_aui_mgr->SavePerspective();
+      int p = perspective.Find(m_ri->m_radar_panel->m_dock);
+      if (p != wxNOT_FOUND) {
+        wxString newPerspective = perspective.Left(p);
+        newPerspective << m_ri->m_radar_panel->m_dock;
+        newPerspective << m_pi->m_settings.dock_size;
+        perspective = perspective.Mid(p + m_ri->m_radar_panel->m_dock.length());
+        newPerspective << wxT("|");
+        newPerspective << perspective.AfterFirst(wxT('|'));
+        m_ri->m_radar_panel->m_aui_mgr->LoadPerspective(newPerspective);
+        LOG_DIALOG(wxT("radar_pi: %s: new perspective %s"), m_ri->m_name.c_str(), newPerspective.c_str());
+      }
+    }
+    m_ri->m_radar_panel->m_aui_mgr->Update();
+
+  } else {  // float PPI
+    // first save dock size with Kees's hack
+    m_ri->m_radar_panel->m_dock =
+        wxString::Format(wxT("|dock_size(%d,%d,%d)="), pane.dock_direction, pane.dock_layer, pane.dock_row);
+    wxString perspective = m_ri->m_radar_panel->m_aui_mgr->SavePerspective();
+    int p = perspective.Find(m_ri->m_radar_panel->m_dock);
+    if (p != wxNOT_FOUND) {
+      perspective = perspective.Mid(p + m_ri->m_radar_panel->m_dock.length());
+      perspective = perspective.BeforeFirst(wxT('|'));
+      m_pi->m_settings.dock_size = wxAtoi(perspective);
+      LOG_DIALOG(wxT("radar_pi: %s: replaced=%s, saved dock_size = %d"), m_ri->m_name.c_str(), perspective.c_str(),
+                 m_pi->m_settings.dock_size);
+    }
+
+    wxAuiPaneInfo& pane = m_ri->m_radar_panel->m_aui_mgr->GetPane(m_ri->m_radar_panel);
+    pane.Dockable(false).Movable(true).CloseButton().CaptionVisible().Float();
+    m_ri->m_radar_panel->m_aui_mgr->Update();
+  }
+  m_ri->m_radar_panel->ShowFrame(true);
+  m_pi->m_settings.show_radar[m_ri->m_radar] = 1;
+}
+
 void ControlsDialog::OnRadarShowPPIButtonClick(wxCommandEvent& event) {
   SetMenuAutoHideTimeout();
-
   bool show = true;
-
-  if (M_SETTINGS.radar_count > 1) {
-    if (m_pi->m_settings.show_radar[m_ri->m_radar]) {
-      for (size_t r = 0; r < M_SETTINGS.radar_count; r++) {
-        if (r != m_ri->m_radar && M_SETTINGS.show_radar[r] == true) {
-          show = false;
-        }
-      }
-    }
-    for (size_t r = 0; r < M_SETTINGS.radar_count; r++) {
-      m_pi->m_settings.show_radar[r] = show;
-      if (!show) {
-        bool doHide = true;
-        for (int i = 0; i < MAX_CHART_CANVAS; i++) {
-          if (m_pi->m_chart_overlay[i] == (int)r) {
-            doHide = false;
-          }
-        }
-        if (doHide) {
-          m_pi->m_settings.show_radar_control[r] = false;
-        }
-      }
-      LOG_DIALOG(wxT("%s OnRadarShowButton: show_radar[%d]=%d"), m_log_name.c_str(), r, show);
-    }
-  } else {
-    if (m_ri->IsPaneShown()) {
-      show = false;
-    }
-    m_pi->m_settings.show_radar[0] = show;
-    LOG_DIALOG(wxT("%s OnRadarShowButton: show_radar[%d]=%d"), m_log_name.c_str(), 0, show);
+  if (M_SETTINGS.radar_count > 0) {
+    m_pi->m_settings.show_radar[m_ri->m_radar] = !m_pi->m_settings.show_radar[m_ri->m_radar];
+    LOG_DIALOG(wxT("%s OnRadarShowButton: show_radar[%d]=%d"), m_log_name.c_str(), m_ri->m_radar, show);
   }
-
   m_pi->NotifyRadarWindowViz();
 }
 
@@ -1492,10 +1525,7 @@ void ControlsDialog::OnDeleteAllTargetsButtonClick(wxCommandEvent& event) {
   }
 }
 
-void ControlsDialog::OnMove(wxMoveEvent& event) {
-  m_manually_positioned = true;
-  event.Skip();
-}
+void ControlsDialog::OnMove(wxMoveEvent& event) { event.Skip(); }
 
 /**
  * Show/Hide sizers and buttons depending on which sizer
@@ -1716,6 +1746,9 @@ void ControlsDialog::DisableRadarControls() {
   if (m_power_sub_button) {
     m_power_sub_button->Disable();
   }
+  if (m_doppler_button) {
+    m_doppler_button->Disable();
+  }
 }
 
 void ControlsDialog::EnableRadarControls() {
@@ -1776,6 +1809,9 @@ void ControlsDialog::EnableRadarControls() {
   if (m_power_sub_button) {
     m_power_sub_button->Enable();
   }
+  if (m_doppler_button) {
+    m_doppler_button->Enable();
+  }
 }
 
 void ControlsDialog::UpdateControlValues(bool refreshAll) {
@@ -1813,34 +1849,13 @@ void ControlsDialog::UpdateControlValues(bool refreshAll) {
   if (m_power_sizer) {
     m_power_sub_button->SetLabel(o);
   }
-
-  if (M_SETTINGS.radar_count > 1) {
-    bool show_other_radar = false;
-    if (m_pi->m_settings.show_radar[m_ri->m_radar]) {
-      for (size_t r = 0; r < M_SETTINGS.radar_count; r++) {
-        if (r != m_ri->m_radar && M_SETTINGS.show_radar[r] == true) {
-          show_other_radar = true;
-        }
-      }
-    }
-
-    if (m_pi->m_settings.show_radar[m_ri->m_radar]) {
-      if (show_other_radar) {
-        o = _("Hide all PPI windows");
-      } else {
-        o = _("Show other PPI windows");
-      }
-    } else {
-      if (show_other_radar) {
-        o = _("Show PPI window");  // can happen if this window hidden but control is for overlay
-      } else {
-        o = _("Show all PPI windows");
-      }
-    }
-  } else {
-    o = (m_pi->m_settings.show_radar[m_ri->m_radar]) ? _("Hide PPI window") : _("Show PPI window");
-  }
+  o = _("Hide/Show PPI") + wxT("\n");
+  o << (m_pi->m_settings.show_radar[m_ri->m_radar] ? _("Shown") : _("Hidden"));
   m_show_ppi_button->SetLabel(o);
+
+  o = _("Float/Dock PPI") + wxT("\n");
+  o << (m_pi->m_settings.dock_radar[m_ri->m_radar] ? _("Docked") : _("Floating"));
+  m_dock_ppi_button->SetLabel(o);
 
   for (int b = 0; b < BEARING_LINES; b++) {
     if (!isnan(m_ri->m_vrm[b])) {
@@ -1970,6 +1985,10 @@ void ControlsDialog::UpdateControlValues(bool refreshAll) {
     m_refresh_rate_button->UpdateLabel(true);
   }
 
+  if (m_doppler_button) {
+    m_doppler_button->UpdateLabel();
+  }
+
   if (updateEditDialog) {
     // Update the text that is currently shown in the edit box, this is a copy of the button itself
     EnterEditMode(m_from_control);
@@ -2032,12 +2051,10 @@ void ControlsDialog::UpdateDialogShown(bool resize) {
     // then reset the dialog to the left or right of the radar panel.
     wxPoint panelPos = m_ri->m_radar_panel->GetPos();
     bool controlInitialShow = !m_pi->m_settings.control_pos[m_ri->m_radar].IsFullySpecified();
-    bool panelShown = m_ri->m_radar_panel->IsShown();
-    bool panelMoved = !m_panel_position.IsFullySpecified() || panelPos != m_panel_position;
+    // bool panelShown = m_ri->m_radar_panel->IsShown();
+    // bool panelMoved = !m_panel_position.IsFullySpecified() || panelPos != m_panel_position;
 
-    if (panelShown                                  // if the radar pane is shown and
-        && ((panelMoved && !m_manually_positioned)  // has moved this session and user did not touch pos, or
-            || controlInitialShow)) {               // the position has never been set at all, ever
+    if (controlInitialShow) {  // the position has never been set at all, ever
       wxSize panelSize = m_ri->m_radar_panel->GetSize();
       wxSize mySize = this->GetSize();
 
@@ -2055,7 +2072,6 @@ void ControlsDialog::UpdateDialogShown(bool resize) {
     m_pi->m_settings.show_radar_control[m_ri->m_radar] = true;
     m_panel_position = panelPos;
   }
-
   Resize(false);
 }
 

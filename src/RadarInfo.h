@@ -127,6 +127,7 @@ class RadarInfo {
   RadarControlItem m_next_state_change;
   RadarControlItem m_timed_idle;  // CT_TIMED_IDLE
   RadarControlItem m_timed_run;   // CT_TIMED_RUN
+  RadarControlItem m_doppler;
 
   bool m_showManualValueInAuto;  // Does radar adjust manual value in auto mode? True for Garmin, False for others
   bool m_timed_idle_hardware;    // Does radar handle timed idle itself?
@@ -256,7 +257,7 @@ class RadarInfo {
   double m_mouse_vrm;
 
   // Speedup lookup tables of color to r,g,b, set dependent on m_settings.display_option.
-  wxColour m_colour_map_rgb[BLOB_COLOURS];
+  PixelColour m_colour_map_rgb[BLOB_COLOURS];
   BlobColour m_colour_map[UINT8_MAX + 1];
 
   // Speedup PolarToCartesian lookup (angle,radius) -> (x, y)

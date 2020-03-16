@@ -40,6 +40,7 @@
 #include "RadarControlItem.h"
 #include "drawutil.h"
 #include "jsonreader.h"
+#include "navico/NavicoRadarInfo.h"
 #include "nmea0183/nmea0183.h"
 #include "pi_common.h"
 #include "socketutil.h"
@@ -73,6 +74,7 @@ class radar_pi;
 class GuardZoneBogey;
 class RadarArpa;
 class GPSKalmanFilter;
+class NavicoLocate;
 
 #define MAX_CHART_CANVAS (2)  // How many canvases OpenCPN supports
 #define RADARS (4)            // Arbitrary limit, anyone running this many is already crazy!
@@ -200,18 +202,23 @@ struct receive_statistics {
 typedef enum GuardZoneType { GZ_ARC, GZ_CIRCLE } GuardZoneType;
 
 typedef enum RadarType {
-#define DEFINE_RADAR(t, n, s, l, a, b, c) t,
+#define DEFINE_RADAR(t, n, s, l, a, b, c, d) t,
 #include "RadarType.h"
   RT_MAX
 } RadarType;
 
 const size_t RadarSpokes[RT_MAX] = {
-#define DEFINE_RADAR(t, n, s, l, a, b, c) s,
+#define DEFINE_RADAR(t, n, s, l, a, b, c, d) s,
 #include "RadarType.h"
 };
 
 const size_t RadarSpokeLenMax[RT_MAX] = {
-#define DEFINE_RADAR(t, n, s, l, a, b, c) l,
+#define DEFINE_RADAR(t, n, s, l, a, b, c, d) l,
+#include "RadarType.h"
+};
+
+const static int RadarOrder[RT_MAX] = {
+#define DEFINE_RADAR(t, x, s, l, a, b, c, d) d,
 #include "RadarType.h"
 };
 
@@ -224,6 +231,54 @@ typedef enum ControlType {
 #undef CONTROL_TYPE
   CT_MAX
 } ControlType;
+
+// We used to use wxColour(), but its implementation is surprisingly
+// complicated in some ports of wxWidgets, in particular wxMAC, so
+// use our own BareBones version. This has a surprising effect on
+// performance on those ports!
+
+class PixelColour {
+ public:
+  PixelColour() {
+    red = 0;
+    green = 0;
+    blue = 0;
+  }
+
+  PixelColour(uint8_t r, uint8_t g, uint8_t b) {
+    red = r;
+    green = g;
+    blue = b;
+  }
+
+  uint8_t Red() const { return red; }
+
+  uint8_t Green() const { return green; }
+
+  uint8_t Blue() const { return blue; }
+
+  PixelColour operator=(const PixelColour &other) {
+    if (this != &other) {
+      this->red = other.red;
+      this->green = other.green;
+      this->blue = other.blue;
+    }
+    return *this;
+  }
+
+  PixelColour operator=(const wxColour &other) {
+    this->red = other.Red();
+    this->green = other.Green();
+    this->blue = other.Blue();
+
+    return *this;
+  }
+
+ private:
+  uint8_t red;
+  uint8_t green;
+  uint8_t blue;
+};
 
 enum BlobColour {
   BLOB_NONE,
@@ -261,11 +316,13 @@ enum BlobColour {
   BLOB_HISTORY_31,
   BLOB_WEAK,
   BLOB_INTERMEDIATE,
-  BLOB_STRONG
+  BLOB_STRONG,
+  BLOB_DOPPLER_RECEDING,
+  BLOB_DOPPLER_APPROACHING
 };
 #define BLOB_HISTORY_MAX BLOB_HISTORY_31
 #define BLOB_HISTORY_COLOURS (BLOB_HISTORY_MAX - BLOB_NONE)
-#define BLOB_COLOURS (BLOB_STRONG + 1)
+#define BLOB_COLOURS (BLOB_DOPPLER_APPROACHING + 1)
 
 extern const char *convertRadarToString(int range_meters, int units, int index);
 extern double local_distance(GeoPosition pos1, GeoPosition pos2);
@@ -320,7 +377,9 @@ struct PersistentSettings {
   bool developer_mode;                             // Readonly from config, allows head up mode
   bool show;                                       // whether to show any radar (overlay or window)
   bool show_radar[RADARS];                         // whether to show radar window
+  bool dock_radar[RADARS];                         // whether to dock radar window
   bool show_radar_control[RADARS];                 // whether to show radar menu (control) window
+  int dock_size;                                   // size of the docked radar
   bool transmit_radar[RADARS];                     // whether radar should be transmitting (persistent)
   bool pass_heading_to_opencpn;                    // Pass heading coming from radar as NMEA data to OpenCPN
   bool enable_cog_heading;                         // Allow COG as heading. Should be taken out back and shot.
@@ -338,9 +397,13 @@ struct PersistentSettings {
   wxPoint window_pos[RADARS];                      // Saved position of radar windows, when floating and not docked
   wxPoint alarm_pos;                               // Saved position of alarm window
   wxString alert_audio_file;                       // Filepath of alarm audio file. Must be WAV.
-  NetworkAddress radar_interface_address[RADARS];  // Saved address of radar. Used to speed up next boot.
+  NetworkAddress radar_interface_address[RADARS];  // Saved address of interface used to see radar. Used to speed up next boot.
+  NetworkAddress radar_address[RADARS];            // Saved address of IP address of radar.
+  NavicoRadarInfo navico_radar_info[RADARS];       // Navico specific stuff (multicast addresses + serial nr)
   wxColour trail_start_colour;                     // Starting colour of a trail
   wxColour trail_end_colour;                       // Ending colour of a trail
+  wxColour doppler_approaching_colour;             // Colour for Doppler Approaching returns
+  wxColour doppler_receding_colour;                // Colour for Doppler Receding returns
   wxColour strong_colour;                          // Colour for STRONG returns
   wxColour intermediate_colour;                    // Colour for INTERMEDIATE returns
   wxColour weak_colour;                            // Colour for WEAK returns
@@ -409,7 +472,8 @@ class radar_pi : public opencpn_plugin_116, public wxEvtHandler {
 
   // Other public methods
 
-  bool IsRadarSelectionComplete(bool force);
+  bool EnsureRadarSelectionComplete(bool force);
+  bool MakeRadarSelection();
 
   void NotifyRadarWindowViz();
   void NotifyControlDialog();
@@ -434,14 +498,26 @@ class radar_pi : public opencpn_plugin_116, public wxEvtHandler {
   long GetRangeMeters();
   long GetOptimalRangeMeters();
 
-  void SetRadarInterfaceAddress(int r, NetworkAddress &addr) {
+  void SetRadarInterfaceAddress(int r, NetworkAddress &ifaddr, NetworkAddress &addr) {
     wxCriticalSectionLocker lock(m_exclusive);
-    m_settings.radar_interface_address[r] = addr;
+    m_settings.radar_interface_address[r] = ifaddr;
+    m_settings.radar_address[r] = addr;
   };
+
   NetworkAddress &GetRadarInterfaceAddress(int r) {
     wxCriticalSectionLocker lock(m_exclusive);
     return m_settings.radar_interface_address[r];
   }
+
+  NetworkAddress &GetRadarAddress(int r) {
+    wxCriticalSectionLocker lock(m_exclusive);
+    return m_settings.radar_address[r];
+  }
+
+  void SetNavicoRadarInfo(size_t r, const NavicoRadarInfo &info);
+  void FoundNavicoRadarInfo(const NetworkAddress &radar_addr, const NetworkAddress &interface_addr, const NavicoRadarInfo &info);
+  bool HaveRadarSerialNo(size_t r);
+  NavicoRadarInfo &GetNavicoRadarInfo(size_t r);
 
   void SetRadarHeading(double heading = nan(""), bool isTrue = false);
   double GetHeadingTrue() {
@@ -491,12 +567,14 @@ class radar_pi : public opencpn_plugin_116, public wxEvtHandler {
   wxMenuItem *m_mi3[RADARS];
   PlugIn_ViewPort *m_vp;
 
-  wxFont m_font;      // The dialog font at a normal size
-  wxFont m_fat_font;  // The dialog font at a bigger size, bold
+  wxFont m_font;        // The dialog font at a normal size
+  wxFont m_fat_font;    // The dialog font at a bigger size, bold
+  wxFont m_small_font;  // The dialog font at a smaller size
 
   PersistentSettings m_settings;
   RadarInfo *m_radar[RADARS];
   wxString m_perspective[RADARS];  // Temporary storage of window location when plugin is disabled
+  NavicoLocate *m_locator;
 
   MessageBox *m_pMessageBox;
   wxWindow *m_parent_window;
@@ -605,6 +683,7 @@ class radar_pi : public opencpn_plugin_116, public wxEvtHandler {
 
   // Cursor position. Used to show position in radar window
   GeoPosition m_cursor_pos;
+  GeoPosition m_right_click_pos;
   GeoPosition m_ownship;
 
  public:

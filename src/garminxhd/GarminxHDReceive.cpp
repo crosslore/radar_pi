@@ -128,6 +128,30 @@ void GarminxHDReceive::ProcessFrame(const uint8_t *data, size_t len) {
   m_ri->ProcessRadarSpoke(a, b, packet->line_data, len, packet->display_meters, time_rec);
 }
 
+// Check that this interface is valid for
+// Garmin HD radar, e.g. is on the same network.
+// We know that the radar is on 172.16.2.0 and that
+// the netmask is 12 bits, eg 255.240.0.0.
+
+bool GarminxHDReceive::IsValidGarminAddress(struct ifaddrs * nif) {
+  if (VALID_IPV4_ADDRESS(nif)) {
+
+    uint32_t addr = ntohl(((struct sockaddr_in *) nif->ifa_addr)->sin_addr.s_addr);
+    uint32_t mask = ntohl(((struct sockaddr_in *) nif->ifa_netmask)->sin_addr.s_addr);
+    static uint32_t radar = IPV4_ADDR(172, 16, 2, 0);
+    static uint32_t radarmask = IPV4_ADDR(172, 16, 0, 0);
+
+    if ((addr & mask) == radarmask
+        && (radar & mask) == radarmask)
+    {
+      LOG_RECEIVE(wxT("radar_pi: %s found garmin addr=%X mask=%X req=%X"), m_ri->m_name.c_str(), addr, mask, radarmask);
+      return true;
+    }
+    LOG_RECEIVE(wxT("radar_pi: %s not garmin addr=%X mask=%X req=%X"), m_ri->m_name.c_str(), addr, mask, radarmask);
+  }
+  return false;
+}
+
 SOCKET GarminxHDReceive::PickNextEthernetCard() {
   SOCKET socket = INVALID_SOCKET;
   CLEAR_STRUCT(m_interface_addr);
@@ -137,8 +161,8 @@ SOCKET GarminxHDReceive::PickNextEthernetCard() {
   if (m_interface) {
     m_interface = m_interface->ifa_next;
   }
-  // Loop until card with a valid IPv4 address
-  while (m_interface && !VALID_IPV4_ADDRESS(m_interface)) {
+  // Loop until card with a valid Garmin address
+  while (m_interface && !IsValidGarminAddress(m_interface)) {
     m_interface = m_interface->ifa_next;
   }
   if (!m_interface) {
@@ -149,17 +173,25 @@ SOCKET GarminxHDReceive::PickNextEthernetCard() {
     if (!getifaddrs(&m_interface_array)) {
       m_interface = m_interface_array;
     }
-    // Loop until card with a valid IPv4 address
-    while (m_interface && !VALID_IPV4_ADDRESS(m_interface)) {
+    // Loop until card with a valid Garmin address
+    while (m_interface && !IsValidGarminAddress(m_interface)) {
       m_interface = m_interface->ifa_next;
     }
   }
-  if (m_interface && VALID_IPV4_ADDRESS(m_interface)) {
+  if (m_interface) {
     m_interface_addr.addr = ((struct sockaddr_in *)m_interface->ifa_addr)->sin_addr;
     m_interface_addr.port = 0;
-  }
 
-  socket = GetNewReportSocket();
+    socket = GetNewReportSocket();
+  }
+  else {
+    wxString s;
+    s << _("No interface found") << wxT("\n");
+    s <<_("Interface must match") << wxT(" 172.16/12");
+    SetInfoStatus(s);
+
+    socket = GetNewReportSocket();
+  }
 
   return socket;
 }
@@ -175,8 +207,8 @@ SOCKET GarminxHDReceive::GetNewReportSocket() {
   error = wxT("");
   socket = startUDPMulticastReceiveSocket(m_interface_addr, m_report_addr, error);
   if (socket != INVALID_SOCKET) {
-    wxString addr = FormatNetworkAddress(m_interface_addr);
-    wxString rep_addr = FormatNetworkAddressPort(m_report_addr);
+    wxString addr = m_interface_addr.FormatNetworkAddress();
+    wxString rep_addr = m_report_addr.FormatNetworkAddressPort();
 
     LOG_RECEIVE(wxT("radar_pi: %s scanning interface %s for data from %s"), m_ri->m_name.c_str(), addr.c_str(), rep_addr.c_str());
 
@@ -201,8 +233,8 @@ SOCKET GarminxHDReceive::GetNewDataSocket() {
   error.Printf(wxT("%s data: "), m_ri->m_name.c_str());
   socket = startUDPMulticastReceiveSocket(m_interface_addr, m_data_addr, error);
   if (socket != INVALID_SOCKET) {
-    wxString addr = FormatNetworkAddress(m_interface_addr);
-    wxString rep_addr = FormatNetworkAddressPort(m_data_addr);
+    wxString addr = m_interface_addr.FormatNetworkAddress();
+    wxString rep_addr = m_data_addr.FormatNetworkAddressPort();
 
     LOG_RECEIVE(wxT("radar_pi: %s listening for data on %s from %s"), m_ri->m_name.c_str(), addr.c_str(), rep_addr.c_str());
   } else {
@@ -329,7 +361,7 @@ void *GarminxHDReceive::Entry(void) {
 
               radarFoundAddr = rx_addr.ipv4;
               radar_addr = &radarFoundAddr;
-              m_addr = FormatNetworkAddress(radar_address);
+              m_addr = radar_address.FormatNetworkAddress();
 
               if (m_ri->m_state.GetValue() == RADAR_OFF) {
                 LOG_INFO(wxT("radar_pi: %s detected at %s"), m_ri->m_name.c_str(), m_addr.c_str());

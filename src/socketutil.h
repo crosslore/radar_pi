@@ -15,7 +15,7 @@
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
+ *   the Free Software Foundation; either verion 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
  *   This program is distributed in the hope that it will be useful,       *
@@ -33,6 +33,7 @@
 #ifndef _SOCKETUTIL_H_
 #define _SOCKETUTIL_H_
 
+#include <wx/tokenzr.h>
 #include "pi_common.h"
 
 PLUGIN_BEGIN_NAMESPACE
@@ -46,39 +47,126 @@ PLUGIN_BEGIN_NAMESPACE
 
 #define IPV4_PORT(p) (htons(p))
 
+#pragma pack(push, 1)
+struct PackedAddress {
+  struct in_addr addr;
+  uint16_t port;
+};
+#pragma pack(pop)
+
 class NetworkAddress {
  public:
   NetworkAddress() {
     addr.s_addr = 0;
     port = 0;
   }
+
+  NetworkAddress(PackedAddress packed) {
+    addr.s_addr = packed.addr.s_addr;
+    port = packed.port;
+  }
+
   NetworkAddress(uint8_t a, uint8_t b, uint8_t c, uint8_t d, uint16_t p) {
-    union {
-      uint8_t byte[4];
-      uint32_t word;
-    } u;
+    uint8_t *paddr = (uint8_t *)&addr;
 
-    u.byte[0] = a;
-    u.byte[1] = b;
-    u.byte[2] = c;
-    u.byte[3] = d;
+    paddr[0] = a;
+    paddr[1] = b;
+    paddr[2] = c;
+    paddr[3] = d;
 
-    addr.s_addr = u.word;
     port = htons(p);
   }
+
+  NetworkAddress(const wxString str) {
+    uint8_t *paddr = (uint8_t *)&addr;
+    wxStringTokenizer tokenizer(str, wxT(".:"));
+
+    addr.s_addr = 0;
+    port = 0;
+
+    if (tokenizer.HasMoreTokens()) {
+      paddr[0] = wxAtoi(tokenizer.GetNextToken());
+    }
+    if (tokenizer.HasMoreTokens()) {
+      paddr[1] = wxAtoi(tokenizer.GetNextToken());
+    }
+    if (tokenizer.HasMoreTokens()) {
+      paddr[2] = wxAtoi(tokenizer.GetNextToken());
+    }
+    if (tokenizer.HasMoreTokens()) {
+      paddr[3] = wxAtoi(tokenizer.GetNextToken());
+    }
+    if (tokenizer.HasMoreTokens()) {
+      port = htons(wxAtoi(tokenizer.GetNextToken()));
+    }
+  }
+
+  bool operator<(const NetworkAddress &other) const {
+    if (other.addr.s_addr < this->addr.s_addr) {
+      return true;
+    }
+
+    return other.port < this->port;
+  }
+
+  bool operator==(const NetworkAddress &other) const { return other.addr.s_addr == this->addr.s_addr && other.port == this->port; }
+
+  NetworkAddress &operator=(const NetworkAddress &other) {
+    if (this != &other) {
+      addr.s_addr = other.addr.s_addr;
+      port = other.port;
+    }
+
+    return *this;
+  }
+
+  wxString to_string() const {
+    if (addr.s_addr != 0) {
+      uint8_t *a = (uint8_t *)&addr;  // sin_addr is in network layout
+      return wxString::Format(wxT("%u.%u.%u.%u:%u"), a[0], a[1], a[2], a[3], ntohs(port));
+    }
+    return wxT("");
+  }
+
+  wxString FormatNetworkAddress() const {
+    uint8_t *a = (uint8_t *)&addr;  // sin_addr is in network layout
+    return wxString::Format(wxT("%u.%u.%u.%u"), a[0], a[1], a[2], a[3]);
+  }
+
+  wxString FormatNetworkAddressPort() const {
+    uint8_t *a = (uint8_t *)&addr;  // sin_addr is in network layout
+    return wxString::Format(wxT("%u.%u.%u.%u port %u"), a[0], a[1], a[2], a[3], ntohs(port));
+  }
+
+  struct sockaddr_in GetSockAddrIn() const {
+    struct sockaddr_in sin;
+
+    sin.sin_family = AF_INET;
+    sin.sin_addr = this->addr;
+    sin.sin_port = this->port;
+#ifdef __WX_MAC__
+    sin.sin_len = sizeof(sockaddr_in);
+#endif
+
+    return sin;
+  }
+
+  bool IsNull() const { return (addr.s_addr == 0); }
+
   struct in_addr addr;
   uint16_t port;
 };
 
-extern wxString FormatNetworkAddress(NetworkAddress &addr);
-extern wxString FormatNetworkAddressPort(NetworkAddress &addr);
+extern wxString FormatPackedAddress(const PackedAddress &addr);
 
 extern bool socketReady(SOCKET sockfd, int timeout);
 
 extern int radar_inet_aton(const char *cp, struct in_addr *addr);
-extern SOCKET startUDPMulticastReceiveSocket(NetworkAddress &addr, NetworkAddress &mcast_address, wxString &error_message);
+extern SOCKET startUDPMulticastReceiveSocket(const NetworkAddress &addr, const NetworkAddress &mcast_address,
+                                             wxString &error_message);
 extern SOCKET GetLocalhostServerTCPSocket();
 extern SOCKET GetLocalhostSendTCPSocket(SOCKET receive_socket);
+extern bool socketAddMembership(SOCKET socket, const NetworkAddress &interface_address, const NetworkAddress &mcast_address);
 
 #ifndef __WXMSW__
 
@@ -98,12 +186,14 @@ extern SOCKET GetLocalhostSendTCPSocket(SOCKET receive_socket);
 struct ifaddrs {
   struct ifaddrs *ifa_next;
   struct sockaddr *ifa_addr;
+  struct sockaddr *ifa_netmask;
   ULONG ifa_flags;
 };
 
 struct ifaddrs_storage {
   struct ifaddrs ifa;
   struct sockaddr_storage addr;
+  struct sockaddr_storage netmask;
 };
 
 extern int getifaddrs(struct ifaddrs **ifap);

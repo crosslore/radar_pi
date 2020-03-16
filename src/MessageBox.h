@@ -83,9 +83,7 @@ class MessageBox : public wxDialog {
   void Init();
   bool Show(bool show = true);
 
-  bool Create(wxWindow *parent, radar_pi *pi, wxWindowID id = wxID_ANY, const wxString &caption = _("Radar"),
-              const wxPoint &pos = wxDefaultPosition);
-
+  bool Create(wxWindow *parent, radar_pi *pi);
   void CreateControls();
   bool UpdateMessage(bool force);  // Check whether message box needs to be visible, return true if shown
   void SetTrueHeadingInfo(wxString &msg);
@@ -102,6 +100,7 @@ class MessageBox : public wxDialog {
 
   void OnMessageCloseButtonClick(wxCommandEvent &event);
   void OnMessageHideRadarClick(wxCommandEvent &event);
+  void OnMessageChooseRadarClick(wxCommandEvent &event);
 
   bool IsModalDialogShown();
 
@@ -128,8 +127,9 @@ class MessageBox : public wxDialog {
   wxStaticText *m_radar_text[4];
 
   // MessageBox
-  wxButton *m_close_button;
+  wxButton *m_choose_button;
   wxButton *m_hide_radar;
+  wxButton *m_close_button;
   wxCheckBox *m_have_open_gl;
   wxCheckBox *m_have_boat_pos;
   wxCheckBox *m_have_true_heading;

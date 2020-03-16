@@ -44,11 +44,7 @@ static const uint8_t COMMAND_STAY_ON_B[2] = {0x03, 0xc2};
 static const uint8_t COMMAND_STAY_ON_C[2] = {0x04, 0xc2};
 static const uint8_t COMMAND_STAY_ON_D[2] = {0x05, 0xc2};
 
-NavicoControl::NavicoControl(NetworkAddress sendMultiCastAddress) {
-  m_addr.sin_family = AF_INET;
-  m_addr.sin_addr = sendMultiCastAddress.addr;
-  m_addr.sin_port = sendMultiCastAddress.port;
-
+NavicoControl::NavicoControl() {
   m_radar_socket = INVALID_SOCKET;
   m_name = wxT("Navico radar");
 }
@@ -60,11 +56,13 @@ NavicoControl::~NavicoControl() {
   }
 }
 
+void NavicoControl::SetMultiCastAddress(NetworkAddress sendMultiCastAddress) { m_addr = sendMultiCastAddress.GetSockAddrIn(); }
+
 bool NavicoControl::Init(radar_pi *pi, RadarInfo *ri, NetworkAddress &ifadr, NetworkAddress &radaradr) {
   int r;
   int one = 1;
 
-  // The radar scanner address is not used for Navico BR/Halo radars
+  // The radar IP address is not used for Navico BR/Halo radars
   if (radaradr.port != 0) {
     // Null
   }
@@ -84,14 +82,7 @@ bool NavicoControl::Init(radar_pi *pi, RadarInfo *ri, NetworkAddress &ifadr, Net
   }
 
   if (!r) {
-    struct sockaddr_in s;
-
-    s.sin_addr = ifadr.addr;
-    s.sin_port = ifadr.port;
-    s.sin_family = AF_INET;
-#ifdef __WX_MAC__
-    s.sin_len = sizeof(sockaddr_in);
-#endif
+    struct sockaddr_in s = ifadr.GetSockAddrIn();
 
     r = ::bind(m_radar_socket, (struct sockaddr *)&s, sizeof(s));
   }
@@ -321,7 +312,14 @@ bool NavicoControl::SetControlValue(ControlType controlType, RadarControlItem &i
       break;
     }
 
-      // What would command 23 through 2f be?
+    case CT_DOPPLER: {
+      uint8_t cmd[] = {0x23, 0xc1, (uint8_t)value};
+      LOG_VERBOSE(wxT("radar_pi: %s Doppler state: %d"), m_name.c_str(), value);
+      r = TransmitCmd(cmd, sizeof(cmd));
+      break;
+    }
+
+      // What would command 24 through 2f be?
 
     case CT_ANTENNA_HEIGHT: {
       int v = value * 1000;  // radar wants millimeters, not meters :-)
